@@ -1,0 +1,3278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+    <meta name="theme-color" content="#070e18" />
+    <title>Live Production Switcher</title>
+    <link rel="icon" href="data:,">
+
+    <!-- Golden Layout (v2) CSS -->
+    <link rel="stylesheet" href="./node_modules/golden-layout/dist/css/goldenlayout-base.css" />
+    <link rel="stylesheet" href="./node_modules/golden-layout/dist/css/themes/goldenlayout-dark-theme.css" />
+    <link rel="stylesheet" href="https://microsoft.github.io/vscode-codicons/dist/codicon.css" />
+    <style>
+        :root {
+            --bg: #1e1e1e;
+            --bg-panel: #252526;
+            --bg-activity: #333333;
+            --bg-canvas: #000000;
+            --bg-input: #3c3c3c;
+            --line: #454545;
+            --text: #cccccc;
+            --text-light: #ffffff;
+            --muted: #999999;
+            --cyan: #007acc;
+            --red: #f14c4c;
+            --blue: #3794ff;
+
+            /* Section Scales */
+            --scale-output: 1.0;
+            --scale-input: 1.0;
+            --scale-router: 1.0;
+            --scale-overlay: 1.0;
+
+            /* Settings typography scale */
+            --font-settings-title: 11px;
+            --font-settings-section: 11px;
+            --font-settings-label: 11px;
+            --font-settings-input: 11px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+            min-height: 100vh;
+            padding: 6px;
+            padding-left: 52px;
+        }
+
+        .app-shell.right-hidden {
+            grid-template-columns: 1fr;
+        }
+
+        .settings-activity-bar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            right: 0;
+            width: 36px;
+            background: var(--bg-activity);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid var(--line);
+        }
+
+        .settings-content-area {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            right: 36px;
+            width: 300px;
+            background: var(--bg-panel);
+            z-index: 999;
+            border-left: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            box-shadow: -4px 0 10px rgba(0, 0, 0, 0.3);
+            border-radius: 8px 0 0 8px;
+        }
+
+        /* Hide left panel permanently */
+        .left-col {
+            display: none;
+        }
+
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 6px;
+            position: relative;
+        }
+
+        .panel-shell {
+            position: relative;
+        }
+
+        .panel-shell > .row-head {
+            margin-top: 2px;
+        }
+
+        .panel-tools {
+            position: absolute;
+            top: 6px;
+            /* Lowered a bit to be more centered in header area */
+            right: 6px;
+            display: flex;
+            gap: 4px;
+            z-index: 80;
+            /* Higher to stay on top */
+        }
+
+        .panel-btn {
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--muted);
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            line-height: 20px;
+            text-align: center;
+            padding: 0;
+            font-size: 12px;
+        }
+
+        .panel-btn .codicon {
+            font-size: 14px;
+        }
+
+        .panel-btn:hover {
+            color: var(--text-light);
+            background: var(--bg-input);
+        }
+
+        .panel-btn.is-active {
+            border-color: var(--cyan);
+            color: var(--text-light);
+            background: var(--cyan);
+        }
+
+        #leftPanel.is-collapsed,
+        #rightPanel.is-collapsed {
+            position: fixed;
+            top: 10px;
+            width: 34px;
+            min-height: 34px;
+            padding: 0;
+            z-index: 60;
+            transform: none !important;
+            background: var(--bg);
+        }
+
+        #leftPanel.is-collapsed {
+            left: 8px;
+        }
+
+        #rightPanel.is-collapsed {
+            right: 8px;
+        }
+
+        #leftPanel.is-collapsed .panel,
+        #rightPanel.is-collapsed .panel,
+        #leftPanel.is-collapsed .panel-info,
+        #rightPanel.is-collapsed .panel-info {
+            display: none;
+        }
+
+        #outputPanelContent.is-collapsed {
+            min-height: 34px;
+            height: 34px;
+            overflow: hidden;
+            padding: 0;
+            background: var(--bg);
+        }
+
+        #outputPanelContent.is-collapsed> :not(.panel-tools) {
+            display: none;
+        }
+
+        h3, .row-title {
+            margin: 0 0 4px;
+            font-weight: bold;
+            font-size: 11px;
+            color: var(--text-light);
+        }
+
+        .left-col,
+        .right-col {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .source-widget {
+            background: var(--bg-input);
+            border: 1px dashed var(--line);
+            border-radius: 4px;
+            padding: 6px;
+            cursor: grab;
+            user-select: none;
+            margin-bottom: 8px;
+        }
+
+        .plugin-item {
+            background: var(--bg-input);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px;
+            margin-top: 6px;
+            font-size: 11px;
+        }
+
+        #addPluginBtn {
+            width: 100%;
+            margin-top: 8px;
+            padding: 4px;
+            border-radius: 4px;
+            border: 1px solid var(--line);
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        #addPluginBtn:hover {
+            background: var(--bg-input);
+            color: var(--text-light);
+        }
+
+        .main-col {
+            min-width: 0;
+        }
+
+        .main-tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .tab-btn {
+            border: 1px solid transparent;
+            border-bottom: 1px solid var(--line);
+            background: transparent;
+            color: var(--muted);
+            border-radius: 0;
+            padding: 8px 10px;
+            cursor: pointer;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-light);
+        }
+
+        .tab-btn.active {
+            border-bottom: 1px solid var(--cyan);
+            color: var(--text-light);
+        }
+
+        .tab-view {
+            display: none;
+        }
+
+        .tab-view.active {
+            display: block;
+        }
+
+        #centerGrid {
+            min-height: calc(100vh - 70px);
+            height: calc(100vh - 70px);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .grid-stack-item-content {
+            background: var(--bg-panel);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            overflow: hidden;
+            padding: 4px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+        }
+
+        /* Golden Layout container sizing */
+        #centerGrid .lm_goldenlayout,
+        #centerGrid .lm_root {
+            height: 100%;
+        }
+
+        /* Golden Layout theme overrides (match app palette) */
+        .lm_goldenlayout,
+        .lm_root {
+            background: var(--bg);
+        }
+
+        .lm_splitter {
+            background: var(--line) !important;
+        }
+
+        .lm_splitter:hover {
+            background: var(--cyan) !important;
+        }
+
+        .row-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            margin-bottom: 6px;
+            padding-right: 86px;
+            min-height: 26px;
+            /* Prevent overlap with panel-tools */
+        }
+
+        .row-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .record-btn {
+            border: 1px solid transparent;
+            background: var(--bg-input);
+            color: var(--muted);
+            border-radius: 4px;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 26px;
+            text-align: center;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .record-btn:hover {
+            background: var(--line);
+            color: var(--text-light);
+        }
+
+        .record-btn.is-recording {
+            border-color: #ef4444;
+            color: #fff;
+            background: #ef4444;
+        }
+
+        @keyframes recBlink {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.25;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .row-title {
+            color: #a3bed8;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-size: 10px;
+        }
+
+        .output-panel {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 12px;
+            height: auto;
+        }
+
+        .output-left-col {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .output-right-col {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 140px;
+        }
+
+        .drop-box {
+            position: relative;
+            border: 1px dashed var(--line);
+            border-radius: 4px;
+            background: var(--bg-panel);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: border-color 0.2s;
+            width: calc(360px * var(--scale-output));
+            height: auto;
+            min-width: 160px;
+        }
+
+        .drop-box .label {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+
+        .drop-box .name {
+            font-size: 14px;
+            margin-top: 2px;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .drop-box .surface-wrap {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+            border-radius: 4px;
+        }
+
+        .drop-monitor,
+        .drop-browser {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: var(--bg-canvas);
+        }
+
+        .drop-browser {
+            display: none;
+            border: 0;
+        }
+
+        .overlay-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+            overflow: hidden;
+        }
+
+        .overlay-item {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .audio-meter {
+            position: absolute;
+            right: 1px;
+            top: 2px;
+            bottom: 2px;
+            width: 7px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            padding: 1px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 22;
+        }
+
+        .audio-meter .bar {
+            align-self: end;
+            width: 100%;
+            height: 0%;
+            border-radius: 1px;
+            background: linear-gradient(0deg, #34d399, #f59e0b 65%, #ef4444);
+            transition: height 60ms linear;
+        }
+
+        .audio-meter.is-muted .bar {
+            background: #444;
+            height: 2px !important;
+        }
+
+        /* Override for Master/Program/Preview specific meters if needed */
+        .drop-box .audio-meter,
+        .master-panel .audio-meter {
+            right: 8px;
+            top: 8px;
+            bottom: 8px;
+            width: 12px;
+            gap: 2px;
+        }
+
+        #programDrop {
+            border-color: #ef4444;
+        }
+
+        #previewDrop {
+            border-color: #22c55e;
+        }
+
+        .switch-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .switch-controls button,
+        .switch-controls select,
+        .switch-controls input {
+            padding: 4px;
+            border-radius: 4px;
+            border: 1px solid var(--line);
+            background: var(--bg-input);
+            color: var(--text);
+            height: 28px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        #cutBtn {
+            order: 10; /* Move to bottom */
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+            color: #fecaca;
+        }
+
+        #autoBtn {
+            border-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.12);
+            color: #fef3c7;
+        }
+
+        .master-panel {
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: var(--bg-panel);
+            overflow: hidden;
+            padding: 6px;
+            height: auto;
+        }
+
+        .surface-wrap {
+            position: relative;
+            width: 100%;
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .master-surface {
+            width: calc(1280px * var(--scale-output) * 0.5);
+            max-width: 100%;
+            height: auto;
+            aspect-ratio: 16/9;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            background: var(--bg-canvas);
+            display: block;
+        }
+
+        #masterBrowserFrame {
+            display: none;
+            border: 0;
+        }
+
+        canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+            background: var(--bg-canvas);
+        }
+
+        .router-grid {
+            --section-scale: var(--scale-router);
+        }
+
+        .input-grid {
+            --section-scale: var(--scale-input);
+        }
+
+        .overlay-grid {
+            --section-scale: var(--scale-overlay);
+        }
+
+        .router-grid,
+        .input-grid,
+        .overlay-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: calc(8px * var(--section-scale));
+            justify-content: flex-start;
+            align-content: flex-start;
+            height: auto;
+            width: 100%;
+        }
+
+        .aux-slot,
+        .input-slot,
+        .overlay-slot {
+            flex: 0 0 auto;
+            width: calc(180px * var(--section-scale));
+            min-width: calc(120px * var(--section-scale));
+            max-width: calc(480px * var(--section-scale));
+            border: 1px dashed var(--line);
+            border-radius: 4px;
+            padding: calc(4px * var(--section-scale));
+            min-height: calc(100px * var(--section-scale));
+            background: var(--bg);
+            cursor: pointer;
+            resize: both;
+            overflow: auto;
+            position: relative;
+        }
+
+        .input-slot.is-program,
+        .overlay-slot.is-program,
+        .aux-slot.is-program {
+            border-color: #ef4444;
+            box-shadow: inset 0 0 0 1px #ef4444;
+        }
+
+        .input-slot.is-preview,
+        .overlay-slot.is-preview,
+        .aux-slot.is-preview {
+            border-color: #22c55e;
+            box-shadow: inset 0 0 0 1px #22c55e;
+        }
+
+        .input-slot.is-selected,
+        .aux-slot.is-active {
+            border-color: var(--cyan);
+        }
+
+        .overlay-slot.is-selected {
+            border-color: var(--cyan);
+        }
+
+        .input-slot.is-recording::before,
+        .aux-slot.is-recording::before,
+        #programDrop.is-recording::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+            animation: recBlink 1s infinite;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .slot-index {
+            position: absolute;
+            right: 6px;
+            top: 6px;
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            display: grid;
+            place-items: center;
+            font-size: 10px;
+            color: var(--cyan);
+            z-index: 25;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .add-slot-btn {
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--muted);
+            border: 1px dashed var(--line);
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-left: 12px;
+            line-height: 1;
+        }
+
+        .add-slot-btn:hover {
+            background: var(--btn-hover);
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
+
+
+
+        .slot-head,
+        .aux-head,
+        .overlay-head {
+            font-size: 11px;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+        }
+
+        .chroma-toggle-btn {
+            position: absolute;
+            right: 30px;
+            top: 8px;
+            font-size: 12px;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 30;
+            display: none; /* Hidden by default, shown in refreshInputBus if source exists */
+        }
+
+        .chroma-toggle-btn.is-active {
+            color: var(--cyan);
+            filter: drop-shadow(0 0 4px var(--cyan));
+        }
+
+        .chroma-toggle-btn:hover {
+            color: var(--text-light);
+        }
+
+        .audio-toggle-btn {
+            position: absolute;
+            right: 50px;
+            top: 8px;
+            font-size: 13px;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 30;
+            display: none;
+        }
+
+        .audio-toggle-btn.is-muted {
+            color: var(--red);
+        }
+
+        .audio-toggle-btn.is-unmuted {
+            color: var(--cyan);
+        }
+
+        .audio-toggle-btn:hover {
+            color: var(--text-light);
+        }
+
+        .overlay-toggle-pgm {
+            position: absolute;
+            right: 25px;
+            top: 8px;
+            font-size: 13px;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 50;
+        }
+
+        .overlay-toggle-pgm.is-active {
+            color: var(--red);
+            filter: drop-shadow(0 0 4px var(--red));
+        }
+
+        .overlay-engine-switch {
+            position: absolute;
+            right: 45px;
+            top: 8px;
+            font-size: 9px;
+            font-weight: bold;
+            color: var(--muted);
+            cursor: pointer;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 1px 4px;
+            border-radius: 2px;
+            z-index: 50;
+            user-select: none;
+            border: 1px solid var(--line);
+            line-height: 1.2;
+        }
+
+        .overlay-engine-switch.is-pgm {
+            color: var(--red);
+            border-color: var(--red);
+        }
+
+        .overlay-engine-switch.is-prw {
+            color: var(--cyan);
+            border-color: var(--cyan);
+        }
+
+        .slot-preview-canvas,
+        .aux-preview-canvas,
+        .overlay-preview-canvas,
+        .slot-browser,
+        .aux-browser {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            display: block;
+            background: var(--bg);
+        }
+
+        .slot-browser,
+        .aux-browser {
+            display: none;
+            border: 0;
+            background: #07101b;
+        }
+
+        .field {
+            margin-bottom: 8px;
+            display: grid;
+            gap: 4px;
+        }
+
+        /* Settings Panel Drag & Drop */
+        .settings-bar-icon[draggable="true"] {
+            cursor: grab;
+        }
+
+        .settings-bar-icon.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .settings-bar-icon.drag-over {
+            background: rgba(0, 122, 204, 0.3);
+            border: 1px dashed var(--cyan);
+        }
+
+        /* Settings in-workspace: hide content but keep placeholder visible */
+        .settings-section.in-workspace {
+            display: block !important;
+        }
+
+        .settings-section.in-workspace > :not(.workspace-placeholder-msg) {
+            display: none !important;
+        }
+
+        /* Sidebar placeholder shown when panel is in workspace grid */
+        .workspace-placeholder-msg {
+            padding: 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 11px;
+            border: 1px dashed var(--line);
+            margin: 10px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .workspace-placeholder-msg p {
+            margin: 6px 0;
+            font-size: 11px;
+        }
+
+        .workspace-placeholder-msg .codicon {
+            font-size: 20px;
+            color: var(--cyan);
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        /* Settings panel header — unified across sidebar and workspace widget */
+        .settings-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--line);
+            gap: 8px;
+        }
+
+        .settings-panel-header h3,
+        .settings-section h3 {
+            margin: 0;
+            font-size: var(--font-settings-title);
+            font-weight: 700;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .settings-group summary {
+            font-size: var(--font-settings-section);
+            font-weight: 700;
+            color: var(--text-light);
+        }
+
+        .settings-group-content label {
+            font-size: var(--font-settings-label);
+        }
+
+        .settings-group-content input,
+        .settings-group-content select,
+        .settings-group-content button,
+        .settings-group-content textarea {
+            font-size: var(--font-settings-input);
+        }
+
+        .settings-section .field,
+        .settings-section .check-row label {
+            font-size: var(--font-settings-label);
+        }
+
+        .settings-undock-btn {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: color 0.15s, background 0.15s;
+        }
+
+        .settings-undock-btn:hover {
+            color: var(--cyan);
+            background: rgba(0, 122, 204, 0.1);
+        }
+
+        .layout-dock-icon {
+            color: var(--cyan) !important;
+            border: 1px solid rgba(0, 122, 204, 0.2);
+            margin: 4px;
+            border-radius: 4px;
+            animation: none;
+        }
+
+        .layout-dock-icon:hover {
+            background: rgba(0, 122, 204, 0.1);
+        }
+
+        @keyframes dockPulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 122, 204, 0.7);
+            }
+
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(0, 122, 204, 0);
+            }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 122, 204, 0);
+            }
+        }
+
+        .dock-pulsing {
+            animation: dockPulse 0.5s ease-in-out infinite;
+        }
+
+        /* Performance: smooth section transitions */
+        .settings-section {
+            transition: opacity 0.12s ease;
+        }
+
+        /* will-change for interactive dock icons */
+        .settings-bar-icon,
+        .panel-btn {
+            will-change: background, color;
+        }
+
+        /* Dock preview canvas inside layout dock icons */
+        .dock-preview-canvas {
+            display: block;
+            width: 42px;
+            height: 24px;
+            border-radius: 3px;
+            border: 1px solid var(--line);
+            background: #000;
+            margin-top: 3px;
+            object-fit: contain;
+        }
+
+        .field label {
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .field input,
+        .field select,
+        .field button,
+        .field textarea,
+        .settings-group-content input,
+        .settings-group-content select,
+        .settings-group-content button,
+        .settings-group-content textarea {
+            width: 100%;
+            border-radius: 4px;
+            border: 1px solid var(--line);
+            background: var(--bg-input);
+            color: var(--text);
+            padding: 4px;
+            font-size: 11px;
+            font-weight: normal;
+            font-family: inherit;
+        }
+
+        .cg-grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+
+        .cg-grid-3 input {
+            width: 100%;
+            border-radius: 4px;
+            border: 1px solid var(--line);
+            background: var(--bg-input);
+            color: var(--text);
+            padding: 4px;
+        }
+
+        #settingsSourceName {
+            font-size: 11px;
+            color: var(--text-light);
+            background: var(--bg-input);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px;
+            margin-bottom: 10px;
+        }
+
+        #cgLayerName {
+            font-size: 11px;
+            color: var(--text-light);
+            background: var(--bg-input);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px;
+            margin-bottom: 10px;
+        }
+
+        .check-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 11px;
+            color: var(--text-light);
+            height: 24px;
+        }
+
+        .check-row input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: var(--cyan);
+        }
+
+        .check-row label {
+            cursor: pointer;
+            user-select: none;
+            line-height: normal;
+        }
+
+        .browser-module {
+            margin-top: 12px;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            overflow: hidden;
+            background: var(--bg-panel);
+        }
+
+        .browser-module .head {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--line);
+            font-size: 11px;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #browserLiveFrame {
+            width: 100%;
+            height: 190px;
+            border: 0;
+            display: block;
+            background: var(--bg);
+        }
+
+        #recordingStatus {
+            font-size: 10px;
+            color: var(--text-light);
+            background: var(--bg-input);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px;
+            margin-bottom: 8px;
+        }
+
+        #recordingStats {
+            font-size: 10px;
+            color: var(--text-light);
+            background: var(--bg-panel);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px;
+            white-space: pre-line;
+        }
+
+        #chroma-controls label {
+            display: block;
+            font-size: 10px;
+            color: var(--muted);
+            margin-top: 7px;
+        }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .slider-row input[type='range'] {
+            flex: 1;
+        }
+
+        .slider-row span {
+            min-width: 35px;
+            font-size: 10px;
+            color: var(--cyan);
+            text-align: right;
+            font-family: monospace;
+        }
+
+        #chroma-controls input[type='range'],
+        #chroma-controls input[type='color'] {
+            width: 100%;
+        }
+
+        .context-menu {
+            position: absolute;
+            z-index: 1100;
+            display: none;
+            background: var(--bg-panel);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px;
+            min-width: 180px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+        }
+
+        .context-menu button {
+            width: 100%;
+            text-align: left;
+            margin: 1px 0;
+            border: none;
+            border-radius: 3px;
+            padding: 6px 8px;
+            color: var(--text);
+            background: transparent;
+            cursor: pointer;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.1s;
+        }
+
+        .context-menu button .codicon {
+            font-size: 14px;
+            color: var(--muted);
+            width: 16px;
+            text-align: center;
+        }
+
+        .context-menu button:hover {
+            background: var(--cyan);
+            color: var(--text-light);
+        }
+
+        .context-menu button:hover .codicon {
+            color: var(--text-light);
+        }
+
+        .menu-divider {
+            height: 1px;
+            background: var(--line);
+            margin: 4px;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 1400px) {
+            .app-shell {
+                padding: 4px;
+                padding-right: 56px;
+            }
+
+            .input-grid,
+            .router-grid,
+            .overlay-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        @media (max-width: 1080px) {
+
+            .app-shell,
+            .app-shell.left-hidden,
+            .app-shell.right-hidden,
+            .app-shell.left-hidden.right-hidden {
+                grid-template-columns: 1fr;
+                padding: 6px;
+                padding-right: 52px;
+            }
+
+            .input-grid,
+            .router-grid,
+            .overlay-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+            .switch-controls {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 800px) {
+            .app-shell {
+                padding: 4px;
+                padding-right: 48px;
+            }
+
+            .input-grid,
+            .router-grid,
+            .overlay-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .switch-controls {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .output-panel {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 1366x768 optimized */
+        @media (max-height: 800px) {
+            #centerGrid {
+                min-height: calc(100vh - 60px);
+            }
+
+            .grid-stack-item-content {
+                padding: 6px;
+            }
+
+            .source-widget,
+            .plugin-item {
+                padding: 4px;
+                font-size: 10px;
+            }
+
+            h3 {
+                font-size: 14px;
+                margin-bottom: 6px;
+            }
+
+            .panel-btn {
+                width: 20px;
+                height: 20px;
+                font-size: 11px;
+            }
+        }
+
+        /* Higher resolution support */
+        @media (min-width: 1920px) {
+            .app-shell {
+                padding: 16px;
+                padding-right: 64px;
+            }
+
+            .settings-content-area {
+                width: 380px;
+            }
+
+            .settings-bar-icons {
+                width: 56px;
+            }
+
+            .settings-bar-icon {
+                width: 44px;
+                height: 44px;
+            }
+
+            .settings-bar-icon .codicon {
+                font-size: 24px;
+            }
+        }
+
+        @media (min-width: 2560px) {
+            .app-shell {
+                padding: 20px;
+                padding-right: 72px;
+            }
+
+            .settings-content-area {
+                width: 420px;
+            }
+
+            .settings-bar-icons {
+                width: 64px;
+            }
+
+            .settings-bar-icon {
+                width: 50px;
+                height: 50px;
+            }
+
+            .settings-bar-icon .codicon {
+                font-size: 28px;
+            }
+        }
+
+        /* DPI independent base sizes */
+        html {
+            font-size: 16px;
+        }
+
+        @media (-webkit-min-device-pixel-ratio: 2),
+        (min-resolution: 192dpi) {
+            html {
+                font-size: 15px;
+            }
+        }
+
+        @media (-webkit-min-device-pixel-ratio: 3),
+        (min-resolution: 288dpi) {
+            html {
+                font-size: 14px;
+            }
+        }
+
+        /* VS Code Activity Bar - Always Visible on Extreme Right */
+        .settings-activity-bar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .settings-bar-icons {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 8px 4px;
+            background: #0b121e;
+            border-right: 1px solid var(--line);
+            width: 36px;
+            flex-shrink: 0;
+            pointer-events: auto;
+        }
+
+        .settings-bar-icon {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.15s ease;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .settings-bar-icon:hover {
+            background: #1a2a3d;
+            color: var(--text);
+        }
+
+        .settings-bar-icon.active {
+            background: #1e3048;
+            color: var(--cyan);
+            border-right: 2px solid var(--cyan);
+        }
+
+        .settings-bar-icon .codicon {
+            font-size: 16px;
+        }
+
+        /* Badge Notifications */
+        .settings-bar-icon .badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            min-width: 14px;
+            height: 14px;
+            padding: 0 4px;
+            background: var(--red);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            border-radius: 7px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .settings-bar-icon .badge.visible {
+            display: flex;
+        }
+
+        .settings-bar-icon .badge.recording {
+            background: #ef4444;
+            animation: badgePulse 1s infinite;
+        }
+
+        .settings-bar-icon .badge.streaming {
+            background: #f59e0b;
+            animation: badgePulse 1.5s infinite;
+        }
+
+        .settings-bar-icon .badge.error {
+            background: #ef4444;
+        }
+
+        .settings-bar-icon .badge.info {
+            background: var(--cyan);
+            color: #000;
+        }
+
+        @keyframes badgePulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+        }
+
+        /* Drag and Drop */
+        .settings-bar-icon.dragging {
+            opacity: 0.5;
+            transform: scale(1.1);
+        }
+
+        .settings-bar-icon.drag-over {
+            background: rgba(34, 211, 238, 0.2);
+            border: 1px dashed var(--cyan);
+        }
+        /* Tooltip */
+        .settings-bar-icon .tooltip {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #1e3048;
+            color: var(--text);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.2s ease;
+            z-index: 1001;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--line);
+        }
+
+        /* Default (Left) */
+        .settings-activity-bar.on-left .settings-bar-icon .tooltip,
+        .settings-activity-bar:not(.on-right) .settings-bar-icon .tooltip {
+            left: 100%;
+            margin-left: 8px;
+        }
+
+        /* Right Side Overrides */
+        .settings-activity-bar.on-right .settings-bar-icon .tooltip {
+            right: 100%;
+            margin-right: 8px;
+            left: auto;
+            margin-left: 0;
+        }
+
+        .settings-bar-icon:hover .tooltip {
+            opacity: 1;
+        }
+
+        .settings-bar-icon .tooltip::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 5px solid transparent;
+        }
+
+        /* Arrow for Left Side */
+        .settings-activity-bar.on-left .settings-bar-icon .tooltip::before,
+        .settings-activity-bar:not(.on-right) .settings-bar-icon .tooltip::before {
+            right: 100%;
+            border-right-color: #1e3048;
+        }
+
+        /* Arrow for Right Side */
+        .settings-activity-bar.on-right .settings-bar-icon .tooltip::before {
+            left: 100%;
+            border-left-color: #1e3048;
+            border-right-color: transparent;
+        }
+
+        .settings-bar-icon:hover .tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .settings-bar-icon .tooltip .shortcut {
+            color: var(--cyan);
+            margin-left: 8px;
+            font-size: 10px;
+        }
+
+        /* Context Menu */
+        .activity-bar-context-menu {
+            position: fixed;
+            z-index: 1000;
+            background: var(--bg-panel);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px 0;
+            min-width: 160px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            display: none;
+        }
+
+        .activity-bar-context-menu.visible {
+            display: block;
+        }
+
+        .activity-bar-context-menu .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            color: var(--text);
+            font-size: 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.1s ease;
+        }
+
+        .activity-bar-context-menu .menu-item:hover {
+            background: var(--bg-input);
+        }
+
+        .activity-bar-context-menu .menu-item .codicon {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .activity-bar-context-menu .menu-item.checked .codicon::after {
+            content: '\\e2713';
+            color: var(--cyan);
+        }
+
+        .activity-bar-context-menu .menu-divider {
+            height: 1px;
+            background: var(--line);
+            margin: 4px 0;
+        }
+
+        /* Bottom Utility Dock */
+        .settings-bottom-dock {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 8px 4px;
+            background: var(--bg-activity);
+            border-top: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            pointer-events: auto;
+        }
+
+        .dock-icon {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.15s ease;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .dock-icon:hover {
+            background: var(--bg-input);
+            color: var(--text);
+        }
+
+        .dock-icon.active {
+            background: var(--bg-input);
+            color: var(--cyan);
+        }
+
+        .dock-icon .tooltip {
+            position: absolute;
+            left: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            margin-left: 8px;
+            background: var(--bg-panel);
+            color: var(--text);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.15s ease;
+            z-index: 1000;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .dock-icon:hover .tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .dock-icon .tooltip .shortcut {
+            color: var(--cyan);
+            margin-left: 8px;
+            font-size: 10px;
+        }
+
+        .settings-content-area {
+            width: 300px;
+            background: var(--bg-panel);
+            border: 1px solid var(--line);
+            border-left: none;
+            border-radius: 0 12px 12px 0;
+            padding: 12px;
+            overflow-y: auto;
+            max-height: 100vh;
+            pointer-events: auto;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 36px;
+            z-index: 99;
+            box-shadow: 8px 0 24px rgba(0, 0, 0, 0.6);
+        }
+
+        .settings-section {
+            display: none;
+        }
+
+        .settings-section.active {
+            display: block;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* Panel close button */
+        .settings-close-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 26px;
+            height: 26px;
+            border: 1px solid var(--line);
+            background: var(--bg-activity);
+            color: var(--text);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: grid;
+            place-items: center;
+            z-index: 110;
+            transition: all 0.2s;
+        }
+
+        .settings-close-btn:hover {
+            background: #1e3048;
+            color: var(--cyan);
+        }
+
+        /* Hide original panel-tools when using activity bar */
+        #rightPanel .panel-tools {
+            display: none;
+        }
+
+        /* Hide activity bar when collapsed */
+        #rightPanel.is-collapsed .settings-activity-bar {
+            display: none;
+        }
+
+        /* Panel tools should show when collapsed */
+        #rightPanel .panel-tools {
+            display: none;
+        }
+
+        #rightPanel.is-collapsed .panel-tools {
+            display: flex;
+            position: absolute;
+            top: 4px;
+            left: 4px;
+        }
+
+        /* Assets Tree Styling */
+        .asset-tree {
+            margin-top: 12px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 4px;
+            background: var(--bg-card);
+        }
+
+        .asset-node {
+            padding-left: 12px;
+            overflow: hidden;
+        }
+
+        .asset-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+            user-select: none;
+            transition: background 0.1s ease;
+        }
+
+        .asset-item:hover {
+            background: var(--btn-hover);
+        }
+
+        .asset-item.folder .codicon {
+            color: #f59e0b;
+        }
+
+        .asset-item.file .codicon {
+            color: #3b82f6;
+        }
+
+        .asset-item.dragging {
+            opacity: 0.5;
+            background: var(--cyan-dim);
+        }
+
+        .asset-children {
+            display: none;
+            border-left: 1px solid var(--line);
+            margin-left: 8px;
+        }
+
+        .asset-children.expanded {
+            display: block;
+        }
+
+        .asset-empty-state {
+            padding: 20px;
+            text-align: center;
+            color: var(--fg-dim);
+            font-style: italic;
+        }
+
+        .asset-add-btn {
+            width: 100%;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* Global Minimalist Scrollbars */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 10px;
+            transition: background 0.3s ease;
+        }
+
+        *:hover::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3) !important;
+        }
+
+        /* Firefox Support */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+        }
+
+        /* Media Grid View Styling */
+        .asset-tree.grid-view {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+            align-content: start;
+        }
+
+        .grid-view .asset-node {
+            padding-left: 0;
+            display: contents;
+            /* Flatten hierarchy for grid view */
+        }
+
+        .grid-view .asset-item {
+            flex-direction: column;
+            text-align: center;
+            height: 110px;
+            justify-content: space-between;
+            padding: 8px;
+            border: 1px solid transparent;
+            position: relative;
+        }
+
+        .asset-thumbnail {
+            width: 100%;
+            height: 60px;
+            background: #000;
+            border-radius: 4px;
+            object-fit: cover;
+            margin-bottom: 4px;
+        }
+
+        .asset-placeholder {
+            width: 100%;
+            height: 60px;
+            display: grid;
+            place-items: center;
+            background: var(--bg-card);
+            border-radius: 4px;
+            margin-bottom: 4px;
+        }
+
+        .grid-view .asset-item:hover {
+            border-color: var(--line);
+            background: var(--btn-hover);
+        }
+
+        .grid-view .asset-item .codicon {
+            font-size: 24px;
+            margin-bottom: 4px;
+        }
+
+        .grid-view .asset-item span:not(.codicon) {
+            font-size: 10px;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .grid-view .asset-children {
+            display: contents;
+        }
+
+        .grid-view .asset-item.directory {
+            display: none;
+            /* In grid view, we only show files? Or flattened media? */
+        }
+
+        .asset-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .asset-view-toggle {
+            display: flex;
+            gap: 2px;
+            background: var(--bg-card);
+            padding: 2px;
+            border-radius: 4px;
+            border: 1px solid var(--line);
+        }
+
+        .view-toggle-btn {
+            padding: 4px 8px;
+            border-radius: 3px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: var(--fg-dim);
+            transition: all 0.1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .view-toggle-btn.active {
+            background: var(--btn-hover);
+            color: var(--fg-main);
+        }
+
+        /* Collapsible Settings Styling */
+        details.settings-group {
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            background: rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        details.settings-group summary {
+            padding: 10px 12px;
+            cursor: pointer;
+            list-style: none;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-light);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-activity);
+            user-select: none;
+        }
+
+        details.settings-group summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.settings-group summary::after {
+            content: '\eab4';
+            /* codicon-chevron-right */
+            font-family: codicon;
+            transition: transform 0.2s;
+        }
+
+        details.settings-group[open] summary::after {
+            transform: rotate(90deg);
+        }
+
+        details.settings-group summary:hover {
+            background: var(--bg-input);
+        }
+
+        .settings-group-content {
+            padding: 12px;
+            border-top: 1px solid var(--line);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-shell" id="appShell">
+        <main class="main-col">
+            <div class="main-tabs">
+                <button class="tab-btn active" data-tab="switcherTab">Switcher</button>
+                <button class="tab-btn" data-tab="masterTab">Master Output</button>
+            </div>
+
+            <div class="tab-view active" id="switcherTab">
+                <!-- Golden Layout workspace mounts here -->
+                <div id="centerGrid"></div>
+            </div>
+
+            <div class="tab-view" id="masterTab">
+                <div class="master-panel">
+                    <div class="surface-wrap">
+                        <canvas id="outputCanvas" class="master-surface" width="1280" height="720"></canvas>
+                        <iframe id="masterBrowserFrame" class="master-surface" src="about:blank"></iframe>
+                        <div id="masterOverlayLayer" class="overlay-layer"></div>
+                        <div id="masterAudioMeter" class="audio-meter">
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- VS Code Activity Bar - Fixed on Extreme Right -->
+    <div class="settings-activity-bar" style="background: var(--bg-activity); border-bottom: 1px solid var(--line);">
+        <div class="settings-bar-icons" id="activityBarIcons">
+            <button class="settings-bar-icon active" data-settings-section="settings-source" data-shortcut="Ctrl+1"
+                title="Source Factory" draggable="true">
+                <span class="codicon codicon-device-camera-video"></span>
+                <span class="badge" id="badge-source"></span>
+                <span class="tooltip">Source Factory<span class="shortcut">Ctrl+1</span></span>
+            </button>
+            <button class="settings-bar-icon" data-settings-section="settings-chroma" data-shortcut="Ctrl+2"
+                title="Chroma/Settings" draggable="true">
+                <span class="codicon codicon-color-mode"></span>
+                <span class="badge" id="badge-chroma"></span>
+                <span class="tooltip">Chroma Settings<span class="shortcut">Ctrl+2</span></span>
+            </button>
+            <button class="settings-bar-icon" data-settings-section="settings-cg" data-shortcut="Ctrl+3"
+                title="CG Graphics" draggable="true">
+                <span class="codicon codicon-collection"></span>
+                <span class="badge" id="badge-cg"></span>
+                <span class="tooltip">CG Graphics<span class="shortcut">Ctrl+3</span></span>
+            </button>
+            <button class="settings-bar-icon" data-settings-section="settings-recording" data-shortcut="Ctrl+4"
+                title="Recording" draggable="true">
+                <span class="codicon codicon-record"></span>
+                <span class="badge recording" id="badge-recording"></span>
+                <span class="tooltip">Recording<span class="shortcut">Ctrl+4</span></span>
+            </button>
+            <button class="settings-bar-icon" data-settings-section="settings-streaming" data-shortcut="Ctrl+5"
+                title="Streaming" draggable="true">
+                <span class="codicon codicon-broadcast"></span>
+                <span class="badge streaming" id="badge-streaming"></span>
+                <span class="tooltip">Streaming<span class="shortcut">Ctrl+5</span></span>
+            </button>
+            <button class="settings-bar-icon" data-settings-section="settings-assets" data-shortcut="Ctrl+7"
+                title="Assets & Media" draggable="true">
+                <span class="codicon codicon-folder-active"></span>
+                <span class="badge" id="badge-assets"></span>
+                <span class="tooltip">Assets & Media<span class="shortcut">Ctrl+7</span></span>
+            </button>
+
+            <!-- Layout Docking Icons (initially hidden) -->
+            <button class="settings-bar-icon layout-dock-icon" id="icon-dock-output"
+                data-settings-section="settings-dock-output" data-layout-panel="outputPanelContent"
+                title="Restore Output Panel" style="display: none;">
+                <span class="codicon codicon-screen-full"></span>
+                <canvas class="dock-preview-canvas" id="preview-dock-output" width="84" height="48"></canvas>
+                <span class="tooltip">Restore Output</span>
+            </button>
+            <button class="settings-bar-icon layout-dock-icon" id="icon-dock-router"
+                data-settings-section="settings-dock-router" data-layout-panel="routerPanelContent"
+                title="Restore Router Panel" style="display: none;">
+                <span class="codicon codicon-split-horizontal"></span>
+                <canvas class="dock-preview-canvas" id="preview-dock-router" width="84" height="48"></canvas>
+                <span class="tooltip">Restore Router</span>
+            </button>
+            <button class="settings-bar-icon layout-dock-icon" id="icon-dock-input"
+                data-settings-section="settings-dock-input" data-layout-panel="inputPanelContent"
+                title="Restore Input Panel" style="display: none;">
+                <span class="codicon codicon-layers-dot"></span>
+                <canvas class="dock-preview-canvas" id="preview-dock-input" width="84" height="48"></canvas>
+                <span class="tooltip">Restore Input</span>
+            </button>
+            <button class="settings-bar-icon layout-dock-icon" id="icon-dock-overlay"
+                data-settings-section="settings-dock-overlay" data-layout-panel="overlayPanelContent"
+                title="Restore Overlay Panel" style="display: none;">
+                <span class="codicon codicon-layers"></span>
+                <canvas class="dock-preview-canvas" id="preview-dock-overlay" width="84" height="48"></canvas>
+                <span class="tooltip">Restore Overlay</span>
+            </button>
+            <!-- UI Settings icon removed from here, accessible via bottom dock -->
+        </div>
+
+        <div class="settings-bottom-dock" style="background: var(--bg-activity); border-top: 1px solid var(--line);">
+            <button class="settings-bar-icon" data-settings-section="settings-workspace" title="Layout Settings"
+                data-dock-action="workspace">
+                <span class="codicon codicon-layout"></span>
+                <span class="tooltip">Layout Settings</span>
+            </button>
+            <button class="settings-bar-icon" data-settings-section="settings-preferences" title="Preferences"
+                data-dock-action="settings">
+                <span class="codicon codicon-settings-gear"></span>
+                <span class="tooltip">Preferences</span>
+            </button>
+        </div>
+        <button class="dock-icon" id="dock-account" data-dock-action="account" title="Accounts">
+            <span class="codicon codicon-account"></span>
+            <span class="tooltip">Accounts<span class="shortcut">Ctrl+Alt+A</span></span>
+        </button>
+    </div>
+    </div>
+
+    <!-- Activity Bar Context Menu -->
+    <div class="activity-bar-context-menu" id="activityBarContextMenu">
+        <div class="menu-item" data-action="hide-source">
+            <span class="codicon codicon-source"></span>
+            <span>Hide Source Factory</span>
+        </div>
+        <div class="menu-item" data-action="hide-chroma">
+            <span class="codicon codicon-debug-alt"></span>
+            <span>Hide Chroma</span>
+        </div>
+        <div class="menu-item" data-action="hide-cg">
+            <span class="codicon codicon-symbol-color"></span>
+            <span>Hide CG Graphics</span>
+        </div>
+        <div class="menu-item" data-action="hide-recording">
+            <span class="codicon codicon-record"></span>
+            <span>Hide Recording</span>
+        </div>
+        <div class="menu-item" data-action="hide-streaming">
+            <span class="codicon codicon-broadcast"></span>
+            <span>Hide Streaming</span>
+        </div>
+        <!-- UI Settings Context Menu Option Removed -->
+        <div class="menu-item" data-action="hide-workspace">
+            <span class="codicon codicon-layout"></span>
+            <span>Hide Workspace Layout</span>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-item" data-action="reset-order">
+            <span class="codicon codicon-refresh"></span>
+            <span>Reset Icon Order</span>
+        </div>
+    </div>
+
+    <div class="settings-content-area">
+        <button class="settings-close-btn" title="Close Panel">?</button>
+
+        <!-- Source Factory Section -->
+        <div id="settings-source" class="settings-section active">
+            <div class="settings-panel-header">
+                <h3 draggable="true"
+                    ondragstart="event.dataTransfer.setData('application/x-switcher-settings-id', 'settings-source')">
+                    Source Factory</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-source')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+
+            <details class="settings-group" open>
+                <summary>Standard Sources</summary>
+                <div class="settings-group-content">
+                    <div id="sourceWidgetSettings" class="source-widget" draggable="true">Drag Source to input bus</div>
+                    <div class="plugin-item">Render Engine Source Module</div>
+                    <div class="plugin-item">Media Ingest Module</div>
+                </div>
+            </details>
+
+            <details class="settings-group">
+                <summary>Plugins & Extensions</summary>
+                <div class="settings-group-content">
+                    <div id="pluginList">
+                        <div class="plugin-item">Chroma Toolkit</div>
+                        <div class="plugin-item">Transition Pack</div>
+                    </div>
+                    <button id="addPluginBtn">Add Plugin Placeholder</button>
+                </div>
+            </details>
+        </div>
+
+        <!-- Chroma / Settings Section -->
+        <div id="settings-chroma" class="settings-section">
+            <div class="settings-panel-header">
+                <h3>Chroma &amp; Source Settings</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-chroma')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+            <div id="settingsSourceName">No source selected</div>
+
+            <details class="settings-group" open>
+                <summary>General Source Settings</summary>
+                <div class="settings-group-content">
+                    <div class="check-row">
+                        <input type="checkbox" id="chromaEnable" />
+                        <label for="chromaEnable">Enable Chroma</label>
+                    </div>
+
+                    <div class="check-row">
+                        <input type="checkbox" id="sourceMute" />
+                        <label for="sourceMute">Mute Selected Source</label>
+                    </div>
+
+                    <div class="field">
+                        <label>Chroma Type</label>
+                        <select id="chromaType">
+                            <option value="basic">Basic RGB</option>
+                            <option value="advanced">Pro YCbCr</option>
+                            <option value="enterprise">Enterprise Dual Threshold</option>
+                            <option value="trueenterprise">True Enterprise</option>
+                            <option value="broadcast">Broadcast</option>
+                            <option value="cinematic">Cinematic</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Background For Selected Source</label>
+                        <button id="assignBackgroundBtn">Assign BG Video/Image</button>
+                    </div>
+                </div>
+            </details>
+
+            <details class="settings-group" open>
+                <summary>Precision Controls</summary>
+                <div class="settings-group-content">
+                    <div id="chroma-controls">
+                        <div id="basicControls">
+                            <label>Similarity</label>
+                            <div class="slider-row">
+                                <input type="range" id="similarity" min="0" max="1" step="0.01" />
+                                <span id="similarityValue"></span>
+                            </div>
+
+                            <label>Smoothness</label>
+                            <div class="slider-row">
+                                <input type="range" id="smoothness" min="0" max="1" step="0.01" />
+                                <span id="smoothnessValue"></span>
+                            </div>
+                        </div>
+
+                        <div id="enterpriseControls">
+                            <label>Threshold Low</label>
+                            <div class="slider-row">
+                                <input type="range" id="thresholdLow" min="0" max="1" step="0.01" />
+                                <span id="thresholdLowValue"></span>
+                            </div>
+
+                            <label>Threshold High</label>
+                            <div class="slider-row">
+                                <input type="range" id="thresholdHigh" min="0" max="1" step="0.01" />
+                                <span id="thresholdHighValue"></span>
+                            </div>
+                        </div>
+
+                        <div id="broadcastControls">
+                            <label>Edge Shrink</label>
+                            <div class="slider-row">
+                                <input type="range" id="edgeShrink" min="0" max="0.1" step="0.001" />
+                                <span id="edgeShrinkValue"></span>
+                            </div>
+
+                            <label>Edge Blur</label>
+                            <div class="slider-row">
+                                <input type="range" id="edgeBlur" min="0" max="0.05" step="0.001" />
+                                <span id="edgeBlurValue"></span>
+                            </div>
+                        </div>
+
+                        <div id="cinematicControls">
+                            <label>Light Wrap</label>
+                            <div class="slider-row">
+                                <input type="range" id="lightWrap" min="0" max="1" step="0.01" />
+                                <span id="lightWrapValue"></span>
+                            </div>
+                        </div>
+
+                        <div id="commonControls">
+                            <label>Spill Suppression</label>
+                            <div class="slider-row">
+                                <input type="range" id="spill" min="0" max="1" step="0.01" />
+                                <span id="spillValue"></span>
+                            </div>
+
+                            <label>Key Color Selection</label>
+                            <input type="color" id="keyColor" value="#00ff00" />
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <div class="browser-module">
+                <div class="head" id="browserLiveTitle">No browser source selected</div>
+                <iframe id="browserLiveFrame" src="about:blank"></iframe>
+            </div>
+        </div>
+
+
+        <!-- CG Section -->
+        <div id="settings-cg" class="settings-section">
+            <div class="settings-panel-header">
+                <h3 draggable="true"
+                    ondragstart="event.dataTransfer.setData('application/x-switcher-settings-id', 'settings-cg')">CG
+                    Settings</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-cg')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+            <div id="cgLayerName">No overlay selected</div>
+
+            <div class="check-row">
+                <input type="checkbox" id="cgVisible" />
+                <label for="cgVisible">Show Layer</label>
+            </div>
+
+            <div class="field">
+                <label>Opacity</label>
+                <div class="slider-row">
+                    <input type="range" id="cgOpacity" min="0" max="1" step="0.01" value="1" />
+                    <span id="cgOpacityValue">1.00</span>
+                </div>
+            </div>
+
+            <div class="cg-grid-3">
+                <div class="field">
+                    <label>Fade In (ms)</label>
+                    <input type="number" id="cgFadeInMs" min="0" step="50" value="350" />
+                </div>
+                <div class="field">
+                    <label>Fade Out (ms)</label>
+                    <input type="number" id="cgFadeOutMs" min="0" step="50" value="350" />
+                </div>
+                <div class="field" style="align-self:end;">
+                    <button id="cgFadeInBtn" type="button">Fade In</button>
+                </div>
+            </div>
+
+            <div class="field">
+                <button id="cgFadeOutBtn" type="button">Fade Out</button>
+            </div>
+
+            <div class="cg-grid-3">
+                <div class="field">
+                    <button id="cgResetBtn" type="button">Reset SRT</button>
+                </div>
+                <div class="field">
+                    <button id="cgCopyBtn" type="button">Copy</button>
+                </div>
+                <div class="field">
+                    <button id="cgPasteBtn" type="button">Paste</button>
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Scale (X Y Z)</label>
+                <div class="cg-grid-3">
+                    <input type="number" id="cgScaleX" step="0.01" value="1" />
+                    <input type="number" id="cgScaleY" step="0.01" value="1" />
+                    <input type="number" id="cgScaleZ" step="0.01" value="1" />
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Rotation (X Y Z, deg)</label>
+                <div class="cg-grid-3">
+                    <input type="number" id="cgRotateX" step="1" value="0" />
+                    <input type="number" id="cgRotateY" step="1" value="0" />
+                    <input type="number" id="cgRotateZ" step="1" value="0" />
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Translation (X Y Z, px)</label>
+                <div class="cg-grid-3">
+                    <input type="number" id="cgTranslateX" step="1" value="0" />
+                    <input type="number" id="cgTranslateY" step="1" value="0" />
+                    <input type="number" id="cgTranslateZ" step="1" value="0" />
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Recording Section -->
+        <div id="settings-recording" class="settings-section">
+            <div class="settings-panel-header">
+                <h3 draggable="true"
+                    ondragstart="event.dataTransfer.setData('application/x-switcher-settings-id', 'settings-recording')">
+                    Recording</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-recording')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+            <div id="recordingStatus">Idle</div>
+
+            <details class="settings-group" open>
+                <summary>Capture Source</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Target</label>
+                        <select id="recordTarget">
+                            <option value="program">Program (PGM)</option>
+                            <option value="input">Input</option>
+                            <option value="aux">AUX</option>
+                        </select>
+                    </div>
+
+                    <div class="cg-grid-3">
+                        <div class="field">
+                            <label>Input #</label>
+                            <input type="number" id="recordInputIndex" min="1" max="10" value="1" />
+                        </div>
+                        <div class="field">
+                            <label>AUX #</label>
+                            <input type="number" id="recordAuxIndex" min="1" max="10" value="1" />
+                        </div>
+                        <div class="field">
+                            <label>FPS</label>
+                            <input type="number" id="recordFps" min="1" max="60" value="30" />
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details class="settings-group" open>
+                <summary>Encoding & Output</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Resolution</label>
+                        <select id="recordResolution">
+                            <option value="original">Original</option>
+                            <option value="1920x1080">1920x1080</option>
+                            <option value="1280x720">1280x720</option>
+                            <option value="854x480">854x480</option>
+                            <option value="640x360">640x360</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Format</label>
+                        <select id="recordFormat">
+                            <option value="auto">Auto (Best Supported)</option>
+                            <option value="webm-vp9">WebM (VP9)</option>
+                            <option value="webm-vp8">WebM (VP8)</option>
+                            <option value="mp4-h264">MP4 (H.264)</option>
+                        </select>
+                    </div>
+
+                    <div class="cg-grid-3">
+                        <div class="field">
+                            <label>Quality</label>
+                            <select id="recordQuality">
+                                <option value="high">High</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Adaptive</label>
+                            <select id="recordAdaptive">
+                                <option value="on" selected>On</option>
+                                <option value="off">Off</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details class="settings-group">
+                <summary>Storage</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Save Path</label>
+                        <button id="recordPickPathBtn" type="button">Select Folder</button>
+                        <div id="recordPathLabel" style="font-size: 10px; color: var(--muted); margin-top: 4px;">Browser
+                            download (default)</div>
+                    </div>
+                </div>
+            </details>
+
+            <div class="cg-grid-3">
+                <div class="field">
+                    <button id="recordStartBtn" type="button">Start</button>
+                </div>
+                <div class="field">
+                    <button id="recordStopBtn" type="button">Stop</button>
+                </div>
+                <div class="field">
+                    <button id="recordStopAllBtn" type="button">Stop All</button>
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Recorder Stats</label>
+                <div id="recordingStats">fps: -, late: -, lag: -ms</div>
+            </div>
+        </div>
+
+        <!-- Streaming Section -->
+        <div id="settings-streaming" class="settings-section">
+            <div class="settings-panel-header">
+                <h3 draggable="true"
+                    ondragstart="event.dataTransfer.setData('application/x-switcher-settings-id', 'settings-streaming')">
+                    Streaming</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-streaming')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+            <div id="streamingStatus" style="margin-bottom: 12px; font-size: 11px; color: var(--text-light);">Idle</div>
+
+            <details class="settings-group" open>
+                <summary>Connection Settings</summary>
+                <form class="settings-group-content" onsubmit="return false;">
+                    <div class="field">
+                        <label>Protocol</label>
+                        <select id="streamProtocol">
+                            <option value="whip">WHIP (WebRTC) - Recommended</option>
+                            <option value="http">HTTP (FFmpeg Bridge) - For RTMP/SRT</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Endpoint URL</label>
+                        <input type="text" id="streamEndpoint" placeholder="http://localhost:8889/stream"
+                            autocomplete="url" />
+                    </div>
+
+                    <div class="field">
+                        <label>Bearer Token (Optional)</label>
+                        <input type="password" id="streamToken" placeholder="Enter token if required"
+                            autocomplete="current-password" />
+                    </div>
+
+                    <div class="field"
+                        style="font-size:10px; color: var(--muted); border-left: 2px solid var(--cyan); padding-left: 8px;">
+                        <strong>FFmpeg Bridge:</strong> Run <code>node streaming-bridge.js</code> first, then use
+                        endpoint <code>http://localhost:8889/stream</code>.
+                    </div>
+                </form>
+            </details>
+
+            <details class="settings-group" open>
+                <summary>Stream Output</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Target</label>
+                        <select id="streamTarget">
+                            <option value="program">Program (PGM)</option>
+                            <option value="input">Input</option>
+                            <option value="aux">AUX</option>
+                        </select>
+                    </div>
+
+                    <div class="cg-grid-3">
+                        <div class="field">
+                            <label>Input #</label>
+                            <input type="number" id="streamInputIndex" min="1" max="10" value="1" />
+                        </div>
+                        <div class="field">
+                            <label>AUX #</label>
+                            <input type="number" id="streamAuxIndex" min="1" max="10" value="1" />
+                        </div>
+                        <div class="field">
+                            <label>FPS</label>
+                            <input type="number" id="streamFps" min="1" max="60" value="30" />
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label>Resolution</label>
+                        <select id="streamResolution">
+                            <option value="original">Original</option>
+                            <option value="1920x1080">1920x1080</option>
+                            <option value="1280x720" selected>1280x720</option>
+                            <option value="854x480">854x480</option>
+                            <option value="640x360">640x360</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Adaptive</label>
+                        <select id="streamAdaptive">
+                            <option value="on" selected>On (Auto-adjust FPS)</option>
+                            <option value="off">Off</option>
+                        </select>
+                    </div>
+                </div>
+            </details>
+
+            <div class="cg-grid-3" style="margin-top: 16px;">
+                <div class="field">
+                    <button id="streamStartBtn" type="button">Start Stream</button>
+                </div>
+                <div class="field">
+                    <button id="streamStopBtn" type="button">Stop</button>
+                </div>
+                <div class="field">
+                    <button id="streamStopAllBtn" type="button">Stop All</button>
+                </div>
+            </div>
+
+            <div class="field" style="margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px;">
+                <label style="font-size: 10px; text-transform: uppercase; color: var(--cyan);">Stream Stats</label>
+                <div id="streamingStats" style="font-family: monospace; font-size: 11px;">bitrate: -, rtt: -, jitter: -
+                </div>
+            </div>
+        </div>
+
+        <!-- Workspace & Layout Section -->
+        <div id="settings-workspace" class="settings-section">
+            <div class="settings-panel-header">
+                <h3 draggable="true"
+                    ondragstart="event.dataTransfer.setData('application/x-switcher-settings-id', 'settings-workspace')">
+                    Workspace & Layout</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-workspace')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+
+            <details class="settings-group" open>
+                <summary>Layout Management</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Layout Directory</label>
+                        <button id="workspacePickFolderBtn" type="button">Select 'Layout' Folder</button>
+                        <div id="workspacePathLabel" style="font-size: 10px; color: var(--muted); margin-top: 4px;">No
+                            folder selected</div>
+                    </div>
+
+                    <div class="field">
+                        <label>Active Layout</label>
+                        <div style="display: flex; gap: 4px;">
+                            <select id="workspaceLayoutSelect" style="flex: 1;">
+                                <option value="default">Default</option>
+                            </select>
+                            <button id="workspaceRefreshBtn" type="button" title="Refresh local layouts">?</button>
+                        </div>
+                    </div>
+
+                    <div class="cg-grid-2">
+                        <div class="field">
+                            <button id="workspaceSaveBtn" type="button">Save Layout</button>
+                        </div>
+                        <div class="field">
+                            <button id="workspaceResetBtn" type="button" title="Reset to default">Reset Grid</button>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <button id="workspaceMakeDefaultBtn" type="button">Make Current Default</button>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Preferences Section (rebranded from UI Customization) -->
+        <div id="settings-preferences" class="settings-section">
+            <div class="settings-panel-header">
+                <h3 draggable="true"
+                    ondragstart="event.dataTransfer.setData('application/x-switcher-settings-id', 'settings-preferences')">
+                    Preferences</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-preferences')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+
+            <details class="settings-group" open>
+                <summary>Grid Configuration</summary>
+                <div class="settings-group-content">
+                    <div class="cg-grid-3">
+                        <div class="field">
+                            <label>Inputs</label>
+                            <input type="number" id="workspaceInputCount" min="1" max="50" value="10" />
+                        </div>
+                        <div class="field">
+                            <label>AUX</label>
+                            <input type="number" id="workspaceAuxCount" min="1" max="50" value="10" />
+                        </div>
+                        <div class="field">
+                            <label>Overlays</label>
+                            <input type="number" id="workspaceOverlayCount" min="1" max="50" value="10" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <button id="workspaceApplyGridBtn" type="button">Apply Grid Changes</button>
+                    </div>
+                </div>
+            </details>
+
+            <details class="settings-group" open>
+                <summary>Scaling & Sizing</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Output Scale</label>
+                        <div class="slider-row">
+                            <input type="range" id="uiScaleOutput" min="0.5" max="3.0" step="0.1" value="1.0" />
+                            <span><span id="uiScaleOutputValue">1.0</span>x</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Input Grid Scale</label>
+                        <div class="slider-row">
+                            <input type="range" id="uiScaleInput" min="0.5" max="3.0" step="0.1" value="1.0" />
+                            <span><span id="uiScaleInputValue">1.0</span>x</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Router Scale</label>
+                        <div class="slider-row">
+                            <input type="range" id="uiScaleRouter" min="0.5" max="3.0" step="0.1" value="1.0" />
+                            <span><span id="uiScaleRouterValue">1.0</span>x</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Overlay Scale</label>
+                        <div class="slider-row">
+                            <input type="range" id="uiScaleOverlay" min="0.5" max="3.0" step="0.1" value="1.0" />
+                            <span><span id="uiScaleOverlayValue">1.0</span>x</span>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details class="settings-group">
+                <summary>UI Personalization</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Theme</label>
+                        <select id="uiTheme">
+                            <option value="dark">Dark (Default)</option>
+                            <option value="light">Light</option>
+                            <option value="cyber">Cyber</option>
+                        </select>
+                    </div>
+
+                    <!-- Theme Parameter Builder Section (always visible) -->
+                    <div id="themeParameterBuilder"
+                        style="border: 1px dashed var(--line); border-radius: 4px; padding: 8px; margin-bottom: 8px; background: var(--bg-panel);">
+                        <div style="font-size: 11px; margin-bottom: 8px; color: var(--cyan);">Theme Parameters</div>
+
+                        <div class="cg-grid-3">
+                            <div class="field">
+                                <label>Main Background</label>
+                                <input type="color" id="customColorBg" value="#1e1e1e"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                            <div class="field">
+                                <label>Panel Background</label>
+                                <input type="color" id="customColorPanelBg" value="#252526"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                            <div class="field">
+                                <label>Canvas Background</label>
+                                <input type="color" id="customColorCanvasBg" value="#000000"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                        </div>
+
+                        <div class="cg-grid-3">
+                            <div class="field">
+                                <label>Activity Bar</label>
+                                <input type="color" id="customColorActivityBg" value="#333333"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                            <div class="field">
+                                <label>Accent (Cyan)</label>
+                                <input type="color" id="customColorCyan" value="#007acc"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                            <div class="field">
+                                <label>Input Background</label>
+                                <input type="color" id="customColorInputBg" value="#3c3c3c"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                        </div>
+
+                        <div class="cg-grid-3">
+                            <div class="field">
+                                <label>Borders (Line)</label>
+                                <input type="color" id="customColorLine" value="#454545"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                            <div class="field">
+                                <label>Text Main</label>
+                                <input type="color" id="customColorText" value="#cccccc"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                            <div class="field">
+                                <label>Text Highlight</label>
+                                <input type="color" id="customColorTextLight" value="#ffffff"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                        </div>
+
+                        <div class="cg-grid-3">
+                            <div class="field">
+                                <label>Text Muted</label>
+                                <input type="color" id="customColorMuted" value="#999999"
+                                    style="height: 24px; padding: 0;" />
+                            </div>
+                        </div>
+
+                        <div class="field" style="margin-top: 12px;">
+                            <label>Save as New Custom Theme</label>
+                            <div style="display: flex; gap: 4px;">
+                                <input type="text" id="customThemeName" placeholder="e.g. My Neon Theme"
+                                    style="flex: 1;" />
+                                <button id="saveCustomThemeBtn" type="button"
+                                    style="width: auto; padding: 0 12px;">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details class="settings-group">
+                <summary>Visual Options</summary>
+                <div class="settings-group-content">
+                    <div class="field">
+                        <label>Panel Position</label>
+                        <select id="uiPanelPosition">
+                            <option value="left">Left</option>
+                            <option value="right" selected>Right</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Grid Size</label>
+                        <select id="uiGridSize">
+                            <option value="compact">Compact</option>
+                            <option value="normal">Normal</option>
+                            <option value="large">Large</option>
+                        </select>
+                    </div>
+
+                    <div class="check-row">
+                        <input type="checkbox" id="uiShowAudioMeters" checked />
+                        <label for="uiShowAudioMeters">Show Audio Meters</label>
+                    </div>
+
+                    <div class="check-row">
+                        <input type="checkbox" id="uiShowPreviewNames" checked />
+                        <label for="uiShowPreviewNames">Show Preview Names</label>
+                    </div>
+
+                    <div class="check-row">
+                        <input type="checkbox" id="uiAutoHidePanels" />
+                        <label for="uiAutoHidePanels">Auto-hide Panels</label>
+                    </div>
+
+                    <div class="field">
+                        <label>Animation Speed</label>
+                        <select id="uiAnimationSpeed">
+                            <option value="none">None</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="fast">Fast</option>
+                        </select>
+                    </div>
+                </div>
+            </details>
+
+            <div class="field" style="margin-top: 20px;">
+                <button id="uiResetDefaults" type="button"
+                    style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #ef4444;">Reset
+                    to Defaults</button>
+            </div>
+        </div>
+
+        <!-- Assets Section -->
+        <div id="settings-assets" class="settings-section">
+            <div class="settings-panel-header">
+                <h3 draggable="true"
+                    ondragstart="event.dataTransfer.setData('application/x-switcher-settings-id', 'settings-assets')">
+                    Media Assets</h3>
+                <button class="settings-undock-btn" onclick="app.popSettingsToGrid('settings-assets')"
+                    title="Undock to Workspace">
+                    <span class="codicon codicon-link-external"></span>
+                </button>
+            </div>
+            <div class="asset-header" style="display:flex; justify-content: flex-end; margin-bottom: 10px;">
+                <div class="asset-view-toggle">
+                    <button class="view-toggle-btn active" id="btnAssetViewTree" title="Tree View">
+                        <span class="codicon codicon-list-tree"></span>
+                    </button>
+                    <button class="view-toggle-btn" id="btnAssetViewGrid" title="Grid View">
+                        <span class="codicon codicon-layout-grid"></span>
+                    </button>
+                </div>
+            </div>
+            <button id="addAssetFolderBtn" class="asset-add-btn">
+                <span class="codicon codicon-add"></span>
+                Add Local Media Folder
+            </button>
+            <div id="assetTreeContainer" class="asset-tree">
+                <div class="asset-empty-state">No folders added. Click "Add Local Media Folder" to browse your assets.
+                </div>
+            </div>
+        </div>
+
+        <!-- Layout Dock Sections (Tabs) -->
+        <div id="settings-dock-output" class="settings-section">
+            <div class="workspace-placeholder-msg">
+                <span class="codicon codicon-screen-full"></span>
+                <p>Output Panel is docked to sidebar.</p>
+                <button class="btn btn-primary"
+                    style="margin-top:10px; width:100%; border: 1px solid var(--cyan); background: rgba(0, 122, 204, 0.1); color: var(--text-light); padding: 8px; border-radius: 4px; cursor: pointer;"
+                    onclick="app.restoreLayoutFromSidebar('outputPanelContent')">
+                    <span class="codicon codicon-link-external"></span> Restore to Workspace
+                </button>
+            </div>
+        </div>
+        <div id="settings-dock-router" class="settings-section">
+            <div class="workspace-placeholder-msg">
+                <span class="codicon codicon-split-horizontal"></span>
+                <p>Router Panel is docked to sidebar.</p>
+                <button class="btn btn-primary"
+                    style="margin-top:10px; width:100%; border: 1px solid var(--cyan); background: rgba(0, 122, 204, 0.1); color: var(--text-light); padding: 8px; border-radius: 4px; cursor: pointer;"
+                    onclick="app.restoreLayoutFromSidebar('routerPanelContent')">
+                    <span class="codicon codicon-link-external"></span> Restore to Workspace
+                </button>
+            </div>
+        </div>
+        <div id="settings-dock-input" class="settings-section">
+            <div class="workspace-placeholder-msg">
+                <span class="codicon codicon-layers-dot"></span>
+                <p>Input Bus is docked to sidebar.</p>
+                <button class="btn btn-primary"
+                    style="margin-top:10px; width:100%; border: 1px solid var(--cyan); background: rgba(0, 122, 204, 0.1); color: var(--text-light); padding: 8px; border-radius: 4px; cursor: pointer;"
+                    onclick="app.restoreLayoutFromSidebar('inputPanelContent')">
+                    <span class="codicon codicon-link-external"></span> Restore to Workspace
+                </button>
+            </div>
+        </div>
+        <div id="settings-dock-overlay" class="settings-section">
+            <div class="workspace-placeholder-msg">
+                <span class="codicon codicon-layers"></span>
+                <p>Overlay Panel is docked to sidebar.</p>
+                <button class="btn btn-primary"
+                    style="margin-top:10px; width:100%; border: 1px solid var(--cyan); background: rgba(0, 122, 204, 0.1); color: var(--text-light); padding: 8px; border-radius: 4px; cursor: pointer;"
+                    onclick="app.restoreLayoutFromSidebar('overlayPanelContent')">
+                    <span class="codicon codicon-link-external"></span> Restore to Workspace
+                </button>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <div id="inputContextMenu" class="context-menu">
+        <button data-action="video"><span class="codicon codicon-device-camera-video"></span> Assign Disk Video</button>
+        <button data-action="image"><span class="codicon codicon-file-media"></span> Assign Disk Image</button>
+        <button data-action="audio"><span class="codicon codicon-unmute"></span> Assign Disk Audio</button>
+        <button data-action="webcam"><span class="codicon codicon-device-camera"></span> Assign Webcam</button>
+        <button data-action="browser"><span class="codicon codicon-browser"></span> Assign Browser Source</button>
+        <button data-action="assign-background"><span class="codicon codicon-color-mode"></span> Assign Background</button>
+        <div class="menu-divider"></div>
+        <button data-action="clear"><span class="codicon codicon-trash"></span> Clear Slot</button>
+    </div>
+
+    <div id="overlayContextMenu" class="context-menu">
+        <button data-action="overlay-video"><span class="codicon codicon-device-camera-video"></span> Assign Alpha Video</button>
+        <button data-action="overlay-image"><span class="codicon codicon-file-media"></span> Assign Alpha Image</button>
+        <div class="menu-divider"></div>
+        <button data-action="overlay-clear"><span class="codicon codicon-trash"></span> Clear Layer</button>
+    </div>
+
+    <script type="module">
+        import { GoldenLayout } from './node_modules/golden-layout/dist/esm/index.js';
+        import { AppController } from './app/AppController.js';
+
+        function outputPanelHtml() {
+            return `
+                <div class="grid-stack-item-content panel-shell" id="outputPanelContent" data-section="output">
+                    <div class="panel-tools">
+                        <button class="panel-btn" onclick="app.dockLayoutToSidebar('outputPanelContent')" title="Dock to Sidebar">
+                            <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
+                        </button>
+                        <button class="panel-btn is-active" data-panel-target="outputPanelContent" title="Pin / Auto Hide">
+                            <span class="codicon codicon-pin"></span>
+                        </button>
+                        <button class="panel-btn panel-info" title="Output panel: preview/program monitors and transition controls">
+                            <span class="codicon codicon-info"></span>
+                        </button>
+                    </div>
+                    <div class="row-head">
+                        <div class="row-title">Output Row - Master Engines</div>
+                        <div class="row-actions">
+                            <div class="scale-slider-container" data-section="output" style="display: flex; align-items: center; gap: 4px;">
+                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
+                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
+                            </div>
+                            <button class="panel-btn" id="engineToggleBtn" onclick="app.toggleMasterEngine()" title="Toggle Rendering Engine (WebGL2/Canvas2D)">
+                                <span class="codicon codicon-circuit-board" style="font-size: 12px;"></span>
+                                <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">3D</span>
+                            </button>
+                            <div id="transitionStatus">Idle</div>
+                            <button id="pgmRecordBtn" class="record-btn" title="Record Program">
+                                <span class="codicon codicon-record"></span>
+                            </button>
+                            <button class="panel-btn" onclick="app.dockLayoutToSidebar('outputPanelContent')" title="Dock to Sidebar">
+                                <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
+                            </button>
+                        </div>
+                    </div>
+ 
+                    <div class="output-panel" id="outputPanel">
+                        <div class="output-left-col">
+                            <div class="drop-box" id="previewDrop" style="resize: both; overflow: auto;">
+                                <div class="label">Preview</div>
+                                <div class="surface-wrap">
+                                    <canvas id="previewDisplayCanvas" class="drop-monitor" width="320" height="180"></canvas>
+                                    <iframe id="previewBrowserFrame" class="drop-browser" src="about:blank"></iframe>
+                                    <div id="previewOverlayLayer" class="overlay-layer"></div>
+                                    <div id="previewAudioMeter" class="audio-meter">
+                                        <div class="bar"></div>
+                                        <div class="bar"></div>
+                                    </div>
+                                </div>
+                                <div class="name" id="previewName">None</div>
+                            </div>
+ 
+                            <div class="drop-box" id="programDrop" style="resize: both; overflow: auto;">
+                                <div class="label">Program</div>
+                                <div class="surface-wrap">
+                                    <canvas id="programDisplayCanvas" class="drop-monitor" width="320" height="180"></canvas>
+                                    <iframe id="programBrowserFrame" class="drop-browser" src="about:blank"></iframe>
+                                    <div id="programOverlayLayer" class="overlay-layer"></div>
+                                    <div id="programAudioMeter" class="audio-meter">
+                                        <div class="bar"></div>
+                                        <div class="bar"></div>
+                                    </div>
+                                </div>
+                                <div class="name" id="programName">None</div>
+                            </div>
+                        </div>
+ 
+                        <div class="output-right-col">
+                            <div class="switch-controls">
+                                <button id="autoBtn">AUTO</button>
+                                <select id="transitionAnimation">
+                                    <option value="fade">Fade</option>
+                                    <option value="wipe">Wipe</option>
+                                    <option value="zoom">Zoom</option>
+                                </select>
+                                <select id="transitionEffect">
+                                    <option value="clean">Clean</option>
+                                    <option value="cinematic">Cinematic</option>
+                                    <option value="broadcast">Broadcast</option>
+                                </select>
+                                <input id="transitionDuration" type="number" min="100" step="100" value="800" />
+                                <select id="rendererSelect" style="display: none;">
+                                    <option value="canvas">Canvas 2D</option>
+                                    <option value="webgl2" selected>WebGL2</option>
+                                </select>
+                                <button id="cutBtn">CUT</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function routerPanelHtml() {
+            return `
+                <div class="grid-stack-item-content panel-shell" id="routerPanelContent" data-section="router">
+                    <div class="panel-tools">
+                        <button class="panel-btn" onclick="app.dockLayoutToSidebar('routerPanelContent')" title="Dock to Sidebar">
+                            <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
+                        </button>
+                        <button class="panel-btn panel-info" title="Router panel: AUX outputs">
+                            <span class="codicon codicon-info"></span>
+                        </button>
+                    </div>
+                    <div class="row-head">
+                        <div class="row-title">Router Row - AUX Outputs</div>
+                        <div class="row-actions">
+                            <div class="scale-slider-container" data-section="router" style="display: flex; align-items: center; gap: 4px;">
+                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
+                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
+                            </div>
+                            <button class="add-slot-btn" data-target="aux" title="Add Aux Slot">+</button>
+                        </div>
+                    </div>
+                    <div id="auxRouter" class="router-grid"></div>
+                </div>
+            `;
+        }
+
+        function inputPanelHtml() {
+            return `
+                <div class="grid-stack-item-content panel-shell" id="inputPanelContent" data-section="input">
+                    <div class="panel-tools">
+                        <button class="panel-btn" onclick="app.dockLayoutToSidebar('inputPanelContent')" title="Dock to Sidebar">
+                            <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
+                        </button>
+                        <button class="panel-btn panel-info" title="Input panel: source bus">
+                            <span class="codicon codicon-info"></span>
+                        </button>
+                    </div>
+                    <div class="row-head">
+                        <div class="row-title">Input Row - Input Bus</div>
+                        <div class="row-actions">
+                            <div class="scale-slider-container" data-section="input" style="display: flex; align-items: center; gap: 4px;">
+                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
+                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
+                            </div>
+                            <button class="panel-btn" onclick="app.showSettingsSection('settings-assets')" title="Assets & Media" style="width: 24px; height: 24px;">
+                                <span class="codicon codicon-folder-active" style="font-size: 11px;"></span>
+                            </button>
+                            <button class="add-slot-btn" data-target="input" title="Add Input Slot">+</button>
+                        </div>
+                    </div>
+                    <div id="inputBus" class="input-grid"></div>
+                </div>
+            `;
+        }
+
+        function overlayPanelHtml() {
+            return `
+                <div class="grid-stack-item-content panel-shell" id="overlayPanelContent" data-section="overlay">
+                    <div class="panel-tools">
+                        <button class="panel-btn" onclick="app.dockLayoutToSidebar('overlayPanelContent')" title="Dock to Sidebar">
+                            <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
+                        </button>
+                        <button class="panel-btn panel-info" title="Overlay panel: graphics/lower thirds/alpha video">
+                            <span class="codicon codicon-info"></span>
+                        </button>
+                    </div>
+                    <div class="row-head">
+                        <div class="row-title">Overlay Row - CG Layers</div>
+                        <div class="row-actions">
+                            <div class="scale-slider-container" data-section="overlay" style="display: flex; align-items: center; gap: 4px;">
+                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
+                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
+                            </div>
+                            <button class="add-slot-btn" data-target="overlay" title="Add Overlay Slot">+</button>
+                        </div>
+                    </div>
+                    <div id="overlayBus" class="overlay-grid"></div>
+                </div>
+            `;
+        }
+
+        async function initWorkspace() {
+            const containerEl = document.getElementById('centerGrid');
+            if (!containerEl) throw new Error('Workspace container #centerGrid not found');
+
+            const config = {
+                settings: {
+                    hasHeaders: false,
+                    reorderEnabled: true,
+                    selectionEnabled: true,
+                    constrainDragToContainer: true,
+                    showPopoutIcon: false,
+                    showCloseIcon: false,
+                    showMaximiseIcon: false,
+                    showMinimiseIcon: false,
+                },
+                dimensions: {
+                    borderWidth: 4,
+                    borderGrabWidth: 8,
+                    headerHeight: 0,
+                },
+                root: {
+                    type: 'column',
+                    content: [
+                        { type: 'component', componentType: 'output', title: 'Output', height: 45 },
+                        {
+                            type: 'row',
+                            height: 35,
+                            content: [
+                                { type: 'component', componentType: 'inputs', title: 'Inputs', width: 67 },
+                                { type: 'component', componentType: 'router', title: 'Router', width: 33 },
+                            ],
+                        },
+                        { type: 'component', componentType: 'overlay', title: 'Overlays', height: 20 },
+                    ],
+                },
+            };
+
+            const gl = new GoldenLayout(config, containerEl);
+
+            gl.registerComponent('output', (glContainer) => {
+                glContainer.element.innerHTML = outputPanelHtml();
+            });
+
+            gl.registerComponent('router', (glContainer) => {
+                glContainer.element.innerHTML = routerPanelHtml();
+            });
+
+            gl.registerComponent('inputs', (glContainer) => {
+                glContainer.element.innerHTML = inputPanelHtml();
+            });
+
+            gl.registerComponent('overlay', (glContainer) => {
+                glContainer.element.innerHTML = overlayPanelHtml();
+            });
+
+            await new Promise((resolve, reject) => {
+                gl.on('initialised', resolve);
+                try {
+                    gl.init();
+                } catch (err) {
+                    reject(err);
+                }
+            });
+
+            window.goldenLayout = gl;
+        }
+
+        (async () => {
+            try {
+                await initWorkspace();
+
+                window.app = new AppController();
+                await window.app.init();
+            } catch (err) {
+                console.error('[index] Failed to initialize app:', err);
+            }
+        })();
+    </script>
+</body>
+
+</html>
