@@ -1,0 +1,9 @@
+{
+  "gridConfig": {
+    "inputs": 4,
+    "aux": 4,
+    "overlays": 4
+  },
+  "gridstack": [],
+  "uiPanelPosition": "right"
+}

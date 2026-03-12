@@ -1,0 +1,38 @@
+{
+  "gridConfig": {
+    "inputs": 5,
+    "aux": 5,
+    "overlays": 5
+  },
+  "gridstack": [
+    {
+      "id": "outputPanelContent",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 3
+    },
+    {
+      "id": "routerPanelContent",
+      "x": 0,
+      "y": 3,
+      "w": 4,
+      "h": 3
+    },
+    {
+      "id": "inputPanelContent",
+      "x": 4,
+      "y": 3,
+      "w": 4,
+      "h": 3
+    },
+    {
+      "id": "overlayPanelContent",
+      "x": 8,
+      "y": 3,
+      "w": 4,
+      "h": 3
+    }
+  ],
+  "uiPanelPosition": "left"
+}

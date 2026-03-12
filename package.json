@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "patch:golden-layout-esm": "node tools/patch-golden-layout-esm.cjs",
+    "postinstall": "npm run patch:golden-layout-esm",
+    "start": "npm run patch:golden-layout-esm && node server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "golden-layout": "^2.6.0"
+  }
+}
