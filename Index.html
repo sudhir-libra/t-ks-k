@@ -3024,7 +3024,7 @@
 
         function outputPanelHtml() {
             return `
-                <div class="grid-stack-item-content panel-shell" id="outputPanelContent" data-section="output">
+                <div class="grid-stack-item-content panel-shell" id="outputPanelContent">
                     <div class="panel-tools">
                         <button class="panel-btn" onclick="app.dockLayoutToSidebar('outputPanelContent')" title="Dock to Sidebar">
                             <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
@@ -3039,10 +3039,6 @@
                     <div class="row-head">
                         <div class="row-title">Output Row - Master Engines</div>
                         <div class="row-actions">
-                            <div class="scale-slider-container" data-section="output" style="display: flex; align-items: center; gap: 4px;">
-                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
-                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
-                            </div>
                             <button class="panel-btn" id="engineToggleBtn" onclick="app.toggleMasterEngine()" title="Toggle Rendering Engine (WebGL2/Canvas2D)">
                                 <span class="codicon codicon-circuit-board" style="font-size: 12px;"></span>
                                 <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">3D</span>
@@ -3116,7 +3112,7 @@
 
         function routerPanelHtml() {
             return `
-                <div class="grid-stack-item-content panel-shell" id="routerPanelContent" data-section="router">
+                <div class="grid-stack-item-content panel-shell" id="routerPanelContent">
                     <div class="panel-tools">
                         <button class="panel-btn" onclick="app.dockLayoutToSidebar('routerPanelContent')" title="Dock to Sidebar">
                             <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
@@ -3128,10 +3124,6 @@
                     <div class="row-head">
                         <div class="row-title">Router Row - AUX Outputs</div>
                         <div class="row-actions">
-                            <div class="scale-slider-container" data-section="router" style="display: flex; align-items: center; gap: 4px;">
-                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
-                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
-                            </div>
                             <button class="add-slot-btn" data-target="aux" title="Add Aux Slot">+</button>
                         </div>
                     </div>
@@ -3142,7 +3134,7 @@
 
         function inputPanelHtml() {
             return `
-                <div class="grid-stack-item-content panel-shell" id="inputPanelContent" data-section="input">
+                <div class="grid-stack-item-content panel-shell" id="inputPanelContent">
                     <div class="panel-tools">
                         <button class="panel-btn" onclick="app.dockLayoutToSidebar('inputPanelContent')" title="Dock to Sidebar">
                             <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
@@ -3154,10 +3146,6 @@
                     <div class="row-head">
                         <div class="row-title">Input Row - Input Bus</div>
                         <div class="row-actions">
-                            <div class="scale-slider-container" data-section="input" style="display: flex; align-items: center; gap: 4px;">
-                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
-                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
-                            </div>
                             <button class="panel-btn" onclick="app.showSettingsSection('settings-assets')" title="Assets & Media" style="width: 24px; height: 24px;">
                                 <span class="codicon codicon-folder-active" style="font-size: 11px;"></span>
                             </button>
@@ -3171,7 +3159,7 @@
 
         function overlayPanelHtml() {
             return `
-                <div class="grid-stack-item-content panel-shell" id="overlayPanelContent" data-section="overlay">
+                <div class="grid-stack-item-content panel-shell" id="overlayPanelContent">
                     <div class="panel-tools">
                         <button class="panel-btn" onclick="app.dockLayoutToSidebar('overlayPanelContent')" title="Dock to Sidebar">
                             <span class="codicon codicon-link-external" style="transform: rotate(180deg); font-size: 10px;"></span>
@@ -3183,10 +3171,6 @@
                     <div class="row-head">
                         <div class="row-title">Overlay Row - CG Layers</div>
                         <div class="row-actions">
-                            <div class="scale-slider-container" data-section="overlay" style="display: flex; align-items: center; gap: 4px;">
-                                <input type="range" class="panel-scale-slider" min="0.5" max="3.0" step="0.1" value="1.0" />
-                                <span class="scale-value" style="font-size: 11px; min-width: 30px;">1.0x</span>
-                            </div>
                             <button class="add-slot-btn" data-target="overlay" title="Add Overlay Slot">+</button>
                         </div>
                     </div>
